@@ -52,10 +52,24 @@ var TPL="\u003c!DOCTYPE html\u003e\n\u003chtml lang=\"it\"\u003e\n\u003chead\u00
           attiva: "Activar y firmar", classico: "o firma con el enlace clásico", ok: "✅ Firma rápida activa", okTx: "Desde ahora abre el enlace de la clase o escanea el QR como siempre: la página se abre al instante.",
           nolink: "Abre el enlace de la clase o escanea el QR en el aula.", riattiva: "Reactivar la firma rápida", errore: "No consigo abrir la página" }
   }[L];
+  /* PAGINA UNICA: il link dice con quale foglio parlare (f = indirizzo Google del foglio, h = sito principale se è un altro,
+     d = dominio se non è unifg.it). Senza f vale il foglio scritto qui dentro (i link vecchi continuano a funzionare). */
+  var FP = {};
+  (function(){
+    try {
+      var p = new URLSearchParams(location.search), f = p.get("f") || "", h = p.get("h") || "", d = p.get("d") || "";
+      var ok = function(x){ return /^AKfyc[A-Za-z0-9_\-]{20,140}$/.test(x); };
+      if(!ok(f)) return;
+      var dom = /^[a-z0-9.\-]{3,60}$/i.test(d) ? d.toLowerCase() : "unifg.it";
+      FP.f = f; if(ok(h) && h !== f) FP.h = h; if(dom !== "unifg.it") FP.d = dom;
+      CFG.api = "https://script.google.com/macros/s/" + f + "/exec";
+      CFG.home = "https://script.google.com/a/" + dom + "/macros/s/" + (FP.h || f) + "/exec";
+    } catch(e){}
+  })();
   /* più siti sotto lo stesso tuonome.github.io condividono la memoria del telefono: ogni sito tiene la SUA tessera */
   var KT = "sv_t_" + (function(s){ var h = 5381; for(var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h.toString(36); })(String(CFG.api));
   try { if(!localStorage.getItem(KT) && localStorage.getItem("sv_t")){ localStorage.setItem(KT, localStorage.getItem("sv_t")); localStorage.removeItem("sv_t"); } } catch(e){}
-  var KA = KT.replace("sv_t_", "sv_a_");
+  var KA = KT.replace("sv_t_", "sv_a_"), KOK = KT.replace("sv_t_", "sv_ok_");
   var box = document.getElementById("gs"), msg = document.getElementById("gsMsg");
   msg.textContent = T.apro;
   try { var tm = JSON.parse(localStorage.getItem("tema_ultimo") || "null"); if(tm && /^#[0-9a-f]{6}$/i.test(tm.b)) document.body.style.background = tm.b; } catch(e){}
@@ -116,6 +130,7 @@ var TPL="\u003c!DOCTYPE html\u003e\n\u003chtml lang=\"it\"\u003e\n\u003chead\u00
         });
       }, function(e){ throw new Error("NetworkError: " + ((e && e.message) || e)); })
       .then(function(j){
+        ls(KOK, "1");   // questo foglio risponde alla pagina su GitHub
         if(j.nt) ls(KT, j.nt);
         if(j.err !== undefined){
           var e = new Error(j.err); e.codice = j.codice || "";
@@ -146,7 +161,7 @@ var TPL="\u003c!DOCTYPE html\u003e\n\u003chtml lang=\"it\"\u003e\n\u003chead\u00
   }
   W.google = { script: {
     run: corri(null, null),
-    history: { replace: function(st, p){ try { history.replaceState(null, "", location.pathname + (p ? "?" + qs(p) : "")); } catch(e){} }, push: function(){}, setChangeHandler: function(){} },
+    history: { replace: function(st, p){ try { var o = {}, k; for(k in FP) o[k] = FP[k]; for(k in (p || {})) o[k] = p[k]; var s = qs(o); history.replaceState(null, "", location.pathname + (s ? "?" + s : "")); } catch(e){} }, push: function(){}, setChangeHandler: function(){} },
     host: { close: function(){}, setHeight: function(){}, setWidth: function(){}, editor: { focus: function(){} } },
     url: { getLocation: function(cb){ var o = {}; P.forEach(function(v, k){ o[k] = v; }); if(cb) cb({ parameter: o, parameters: {}, hash: "" }); } }
   } };
@@ -185,6 +200,7 @@ var TPL="\u003c!DOCTYPE html\u003e\n\u003chtml lang=\"it\"\u003e\n\u003chead\u00
       post("apri", A).then(ok, function(e){
         var s = String(e.message || ""), certo = CERTO.test(s), rete = !certo && /NetworkError/.test(s);
         if(e.codice === "SPENTA" || e.codice === "CLASSICA"){ location.replace(CLASSICO); return; }   // firma classica accesa nelle impostazioni
+        if(rete && !ls(KOK) && giri >= 2){ location.replace(CLASSICO); return; }   // il foglio non ha mai risposto da qui: link classico
         if((certo || rete) && Date.now() - tPost < 120000){ giri++; setTimeout(prova, Math.min(2500, 250 * Math.pow(1.5, giri)) * (0.6 + Math.random() * 0.8)); return; }
         ko(e);
       });
