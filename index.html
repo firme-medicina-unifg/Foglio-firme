@@ -70,16 +70,39 @@ var TPL="\u003c!DOCTYPE html\u003e\n\u003chtml lang=\"it\"\u003e\n\u003chead\u00
   var KT = "sv_t_" + (function(s){ var h = 5381; for(var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h.toString(36); })(String(CFG.api));
   try { if(!localStorage.getItem(KT) && localStorage.getItem("sv_t")){ localStorage.setItem(KT, localStorage.getItem("sv_t")); localStorage.removeItem("sv_t"); } } catch(e){}
   var KA = KT.replace("sv_t_", "sv_a_"), KOK = KT.replace("sv_t_", "sv_ok_");
+  var KP = KT.replace("sv_t_", "sv_p_");   // lasciapassare dell'area riservata (codice via email): qui resta, nel riquadro di Google su iPhone no
   var box = document.getElementById("gs"), msg = document.getElementById("gsMsg");
   msg.textContent = T.apro;
   try { var tm = JSON.parse(localStorage.getItem("tema_ultimo") || "null"); if(tm && /^#[0-9a-f]{6}$/i.test(tm.b)) document.body.style.background = tm.b; } catch(e){}
 
   /* 1) la tessera arriva dall'attivazione nella parte dopo il # (non viene mai mandata a GitHub) */
-  var appena = false;
+  var appena = false, HB = "";
   if(location.hash.length > 3){
-    var h = new URLSearchParams(location.hash.slice(1)), nt = h.get("t");
+    var h = new URLSearchParams(location.hash.slice(1)), nt = h.get("t"), np = h.get("p");
     if(nt && /^[A-Za-z0-9_\-]{10,400}\.[A-Za-z0-9_\-]{22}$/.test(nt)){ ls(KT, nt); appena = true; }
+    if(np && /^[A-Za-z0-9_\-]{10,400}\.[A-Za-z0-9_\-]{22}$/.test(np)) ls(KP, np);   // entrato con il codice: il telefono se lo ricorda QUI
+    HB = /^[a-f0-9]{40}$/i.test(h.get("b") || "") ? h.get("b") : "";
     try { history.replaceState(null, "", location.pathname + location.search); } catch(e){}
+  }
+  /* 1b) AREA RISERVATA (?acc=1): il sito di Google mostra le pagine dentro un riquadro e su iPhone il riquadro dimentica
+     tutto quando si chiude il browser. Il lasciapassare del codice via email resta qui: chiedo un biglietto e torno al sito. */
+  var ACC = new URLSearchParams(location.search).get("acc");
+  if(ACC){
+    var casa = function(q){ location.replace(CFG.home + "?" + q); };
+    if(ACC === "esci"){ ls(KP, null); casa("accedi=1"); return; }   // «Cambia account»
+    if(HB){ casa("pb=" + HB); return; }                               // appena entrato con il codice
+    var pp = ls(KP);
+    if(!pp){ casa("cod=1"); return; }                                 // prima volta su questo telefono: codice
+    msg.textContent = "Ti riconosco…";
+    fetch(CFG.api, { method: "POST", body: JSON.stringify({ fn: "bigliettoAccesso", a: [pp] }),
+        headers: { "Content-Type": "text/plain;charset=utf-8" }, credentials: "omit", redirect: "follow", cache: "no-store" })
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if(j && j.ok && j.ok.biglietto){ casa("pb=" + j.ok.biglietto); return; }
+        if(j && j.codice === "ACCESSO_SCADUTO") ls(KP, null);
+        casa("cod=1");
+      }, function(){ casa("cod=1"); });
+    return;
   }
   /* 2) il codice del telefono: lo stesso che usa la pagina firme («tel_id») */
   function telId(){
